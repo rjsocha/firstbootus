@@ -120,6 +120,8 @@ local line boot install payload when op step exe
 	then
 		echo "Installing ${ME} at /${ME}"
 		cp -f "${MYDIR}/${ME}" "/${ME}"
+		chmod 0700 "/${ME}"
+		chown root:root "/${ME}"
 	fi
 	install_firstboot
 }
