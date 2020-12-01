@@ -1,0 +1,168 @@
+#!/bin/bash
+# Tested with
+# CentOS 6
+
+MYDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+ME=$(basename $0)
+PAYLOAD_FOLDER="/.firstbootus"
+http_get() {
+	if command -v wget1 &>/dev/null
+	then
+		wget -q -O "$2" "$1"
+		return $?
+	fi
+	if command -v curl &>/dev/null
+	then
+		curl -s -o "$2" "$1"
+		return $?
+	fi
+	return 1
+}
+
+URL=http://share.socha.it/fb/index
+
+install_firstboot() {
+	if [[ -d /etc/cron.d ]]
+	then
+		echo "Instaling firstbootus activation at /etc/cron.d/$ME"
+		{
+			echo "FIRSTBOOTUS_MODE=cron"
+			echo "@reboot root /${ME} firstboot"
+		} >"/etc/cron.d/$ME"
+	fi
+	# systemd service as alternative
+}
+
+setupme() {
+local line boot install payload when op step exe
+	[[ -d $PAYLOAD_FOLDER ]] || mkdir -p -m 700 "$PAYLOAD_FOLDER"
+	if ! [[ -d $PAYLOAD_FOLDER ]]
+	then
+		echo "ERROR: unable to install firstbootus-configuratus!"
+		exit 10
+	fi
+	
+	line=0
+	boot=0
+	install=0
+	http_get "$URL" - | while read -r payload
+	do
+		((line++))
+		[[ -z $payload ]] && continue
+		[[ $payload =~ ^# ]] && continue
+		if [[ ${payload:0:2} == "I:" ]]
+		then
+			when="install"
+			payload="${payload:2}"
+		elif [[ ${payload:0:2} == "B:" ]]
+		then
+			when="boot"
+			payload="${payload:2}"
+		else
+			echo "SKIP: unable to parse line ${line} (WHEN)" >&2
+			continue
+		fi
+		if [[ ${payload:0:4} == "URL:" ]]
+		then
+			op="url"
+			payload="${payload:4}"
+		elif [[ ${payload:0:7} == "INLINE:" ]]
+		then
+			op="inline"
+			payload="${payload:7}"
+		else
+			echo "SKIP: unable to parse line ${line} (SOURCE)" >&2
+			continue
+		fi
+	
+		if [[ $when == "boot" ]]
+		then
+			((boot++))
+			step=$(printf "%03d" "$boot")
+		elif [[ $when == "install" ]]
+		then
+			((install++))
+			step=$(printf "%03d" "$install")
+		else
+			echo "SKIP: xxx" >&2
+			continue
+		fi
+		exe="${PAYLOAD_FOLDER}/${when}_${step}"
+		if [[ $op == "inline" ]]
+		then
+			echo "$payload" | base64 -d >"$exe" 2>/dev/null
+			if [[ $? -ne 0 ]]
+			then
+				echo "SKIP: unable to decode payload in line ${line}" >&2
+				rm -f "$exe"
+				continue
+			fi
+			echo "installing inline payload in ${exe} (${line})"
+		fi
+		if [[ $op == "url" ]]
+		then
+			http_get "$payload" "$exe"
+			if [[ $? -ne 0 ]]
+			then
+				echo "SKIP: unable to download payload in line ${line}: ${payload}" >&2
+				rm -f "$exe"
+				continue
+			fi
+			echo "installing downloaded payload ${payload} in ${exe} (${line})"
+		fi
+		if [[ -f $exe ]]
+		then
+			chown root:root "$exe"
+			chmod 0700 "$exe"
+		fi
+	done 
+	if [[ $MYDIR != "/" ]]
+	then
+		echo "Installing ${ME} at /${ME}"
+		cp -f "${MYDIR}/${ME}" "/${ME}"
+	fi
+	install_firstboot
+}
+
+run_install() {
+local exe
+	[[ -d $PAYLOAD_FOLDER ]] || exit 0
+	for exe in $(find "$PAYLOAD_FOLDER" -type f -name "install_*" | sort)
+	do
+		echo "RUN/INSTALL: ${exe}"
+		env - PATH=/bin:/usr/bin:/sbin:/usr/sbin LANG=C DEBIAN_FRONTEND=passthrough USER=root "$exe"
+		rm -f "$exe"
+	done
+}
+
+run_firstboot() {
+local exe 
+	
+	[[ -d $PAYLOAD_FOLDER ]] || exit 0
+	for exe in $(find "$PAYLOAD_FOLDER" -type f -name "boot_*" | sort)
+	do
+		echo "RUN/BOOT: ${exe}"
+		env - PATH=/bin:/usr/bin:/sbin:/usr/sbin LANG=C DEBIAN_FRONTEND=passthrough USER=root "$exe"
+		rm -f "$exe"
+	done
+}
+
+cleanupme() {
+	[[ -d $PAYLOAD_FOLDER ]] && rm -rf "$PAYLOAD_FOLDER"
+	[[ ${FIRSTBOOTUS_MODE} == "cron" ]] && [[ -f /etc/cron.d/${ME} ]] && rm -f "/etc/cron.d/${ME}"
+	[[ -f /${ME} ]] && rm -f "/$ME"
+}
+
+if [[ "$1" == "setup" ]]
+then
+	setupme "$@"
+	exit $?
+elif [[ "$1" == "install" ]]
+then
+	run_install "$@"
+elif [[ "$1" == "firstboot" ]]
+then
+	run_firstboot "$@" 2>&1 | logger -t FIRSTBOOTUS
+	cleanupme
+fi
+exit 0
