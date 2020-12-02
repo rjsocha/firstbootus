@@ -130,20 +130,43 @@ local exe
 	[[ -d $PAYLOAD_FOLDER ]] || exit 0
 	for exe in $(find "$PAYLOAD_FOLDER" -type f -name "install_*" | sort)
 	do
-		echo "FIRSTBOOTUS: running ${exe}"
+		echo "FIRSTBOOTUS: start ${exe}"
 		env - PATH=/bin:/usr/bin:/sbin:/usr/sbin LANG=C DEBIAN_FRONTEND=passthrough USER=root "$exe"
+		echo "FIRSTBOOTUS: done ${exe}"
 		rm -f "$exe"
 	done
+}
+
+# best effort
+network_wait() {
+local gw="" c=0
+	while [[ -z $gw ]]
+	do
+		echo "waiting for working network connection"	
+	        gw=$(LANG="C" ip -o route get 8.8.8.8 2>/dev/null | egrep -o 'via [0-9]+\.')
+	        [[ -n $gw ]] && break
+	        sleep 1
+	        ((c++))
+	        [[ $c -gt 45 ]] && break
+	done
+	if ping -c 1 8.8.8.8 &>/dev/null
+	then
+		echo "network status: OK"
+	else
+		echo "network status: UNKNOW"
+	fi
 }
 
 run_firstboot() {
 local exe 
 	
 	[[ -d $PAYLOAD_FOLDER ]] || exit 0
+	network_wait
 	for exe in $(find "$PAYLOAD_FOLDER" -type f -name "boot_*" | sort)
 	do
-		echo "running ${exe}"
+		echo "start ${exe}"
 		env - PATH=/bin:/usr/bin:/sbin:/usr/sbin LANG=C DEBIAN_FRONTEND=passthrough USER=root "$exe"
+		echo "done ${exe}"
 		rm -f "$exe"
 	done
 }
