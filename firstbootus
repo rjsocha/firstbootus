@@ -5,6 +5,7 @@
 MYDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ME=$(basename $0)
 PAYLOAD_FOLDER="/.firstbootus"
+
 http_get() {
 	if command -v wget1 &>/dev/null
 	then
@@ -140,16 +141,16 @@ local exe
 # best effort
 network_wait() {
 local gw="" c=0
+	echo "waiting for working network connection"	
 	while [[ -z $gw ]]
 	do
-		echo "waiting for working network connection"	
 	        gw=$(LANG="C" ip -o route get 8.8.8.8 2>/dev/null | egrep -o 'via [0-9]+\.')
 	        [[ -n $gw ]] && break
 	        sleep 1
 	        ((c++))
 	        [[ $c -gt 45 ]] && break
 	done
-	if ping -c 1 8.8.8.8 &>/dev/null
+	if ping -c 1 atman.pl &>/dev/null
 	then
 		echo "network status: OK"
 	else
