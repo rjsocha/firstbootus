@@ -150,6 +150,7 @@ local gw="" c=0
 	        ((c++))
 	        [[ $c -gt 45 ]] && break
 	done
+	sleep 5
 	if ping -c 1 atman.pl &>/dev/null
 	then
 		echo "network status: OK"
